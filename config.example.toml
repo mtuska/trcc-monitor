@@ -1,0 +1,36 @@
+# trcc-monitor configuration. Copy to ~/.config/trcc-monitor/config.toml and
+# edit. Everything here is optional — omit a key to keep its default.
+
+# Which panels to render, in priority order. "gpu" auto-detects NVIDIA
+# (nvidia-smi) or AMD (amdgpu sysfs) and is skipped if no GPU is found.
+panels = ["limits", "usage", "sessions", "status", "system", "gpu"]
+
+# Transcript mtime freshness (seconds) for counting agents "working now".
+session_window_s = 30
+
+# Filesystem to report disk usage for. On immutable distros (Bazzite/ostree),
+# "/" is a full read-only deployment root — point this at your home mount.
+disk_path = "~"
+
+[intervals]
+limits = 300      # API rate-limit probe — EACH poll is one real 1-token API call
+usage = 60        # local transcript scan (tokens/cost) — free
+sessions = 10     # local active-agent scan — free
+status = 120      # status.claude.com — free
+system = 2        # psutil cpu/mem/disk/net
+gpu = 2           # nvidia-smi / amdgpu sysfs
+render = 1        # frame render + push cadence
+
+[proxy]
+mode = "env"      # none | env | custom   (applies to the limits + status calls)
+url = ""          # used only when mode = "custom"
+
+[sink]
+kind = "trccd"            # trccd | png
+device_key = ""          # e.g. "0416:5408"; empty = auto-select the first LCD
+transport = "auto"       # auto | ipc | rest
+rotate = 0               # 0 | 90 | 180 | 270 — clockwise rotation for a panel
+                         # mounted rotated (e.g. 180 if it's upside-down). The
+                         # frame is rotated before being sent raw via SendFrame.
+rest_base_url = "http://127.0.0.1:8000"
+png_path = ""            # for kind = "png"; empty = $XDG_RUNTIME_DIR/trcc-monitor/preview.png

@@ -1,0 +1,18 @@
+[Unit]
+Description=trcc-monitor — Claude/system dashboard on the Trofeo Vision LCD
+# The trccd daemon owns the USB device; start after it and pull it in.
+# (Harmless if trccd.service isn't installed — Wants is best-effort.)
+After=trccd.service
+Wants=trccd.service
+
+[Service]
+Type=simple
+# The ExecStart path below is filled in by install.sh (resolved trcc-monitor).
+ExecStart=__EXEC__ run
+Restart=on-failure
+RestartSec=5
+# Headless: no graphical session required.
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

@@ -2,8 +2,8 @@
 
 Loaded from ``~/.config/trcc-monitor/config.toml`` (or ``$TRCC_MONITOR_CONFIG``),
 falling back to defaults for anything unset. All intervals are in seconds unless
-noted. The API-probe interval matters most: each probe is a real (1-token) call
-to api.anthropic.com, so keep it comfortably long.
+noted. Every collector is free — the limits collector reads Claude Code's own
+``/api/oauth/usage`` endpoint, which costs no tokens.
 """
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ def _default_config_path() -> Path:
 class Intervals:
     """How often each collector refreshes, in seconds."""
 
-    limits: float = 300.0     # API rate-limit probe — burns one 1-token call each time
+    # Rate-limit windows via GET /api/oauth/usage — free, but rate-limited
+    # server-side, so stay polite rather than hammering it.
+    limits: float = 60.0      # 1 min — free authenticated GET
     usage: float = 60.0       # local transcript scan for tokens/cost
     sessions: float = 10.0    # local transcript mtime scan for active agents
     status: float = 120.0     # status.claude.com summary

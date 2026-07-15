@@ -17,6 +17,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from ..collectors.base import Snapshot
+from ..collectors.limits import fmt_reset
 from ..config import Config
 from . import theme, widgets as w
 
@@ -244,7 +245,11 @@ def _elide(s: str, max_px: int, weight: str, size: int) -> str:
 def _limit_window(d, label, win, used, rate, now, x, y, width):
     util = float(win.get("utilization", 0.0) or 0.0)
     wstatus = (win.get("status") or "").lower()
-    reset_in = win.get("reset_in")
+    # The reset is an ABSOLUTE unix timestamp, so recompute the countdown live
+    # every frame rather than reusing the string formatted at poll time — it
+    # ticks down every second instead of jumping once per poll.
+    reset_ts = win.get("reset_ts")
+    reset_in = fmt_reset(reset_ts, now) if reset_ts else win.get("reset_in")
     limited = wstatus in ("rejected", "blocked", "limited") or util >= 1.0
 
     # Label + percentage on one line (+ LIMITED tag when capped).

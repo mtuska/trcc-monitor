@@ -25,7 +25,9 @@ done
 
 echo "==> Installing trcc-monitor package"
 if command -v uv >/dev/null 2>&1; then
-    uv tool install --force "$REPO_DIR"
+    # --reinstall is load-bearing: without it uv serves a cached wheel keyed on
+    # the (unchanged) version, so local source edits silently never deploy.
+    uv tool install --force --reinstall "$REPO_DIR"
 elif command -v pipx >/dev/null 2>&1; then
     pipx install --force "$REPO_DIR"
 else
@@ -74,7 +76,7 @@ Reminders:
     thermalright-trcc-linux first:
         sudo trcc system setup           # udev rules + SELinux (one-time, root)
         systemctl --user enable --now trccd.service
-  * The `limits` collector makes one real (1-token) Claude API call each poll
-    (default every 5 min). All other collectors are local and free.
+  * All collectors are free: `limits` reads Claude Code's own /api/oauth/usage
+    endpoint (no tokens), everything else is local or an unauthenticated page.
   * Configure via ~/.config/trcc-monitor/config.toml (see README).
 NOTE

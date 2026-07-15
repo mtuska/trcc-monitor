@@ -66,9 +66,31 @@ trcc-monitor preview --mock          # use synthetic data
 trcc-monitor run
 ```
 
-> **Note:** `trcc-monitor check` (and the `limits` collector generally) makes one real, minimal
-> (`max_tokens: 1`) API call to `api.anthropic.com` each time it polls, which counts against your
-> usage. The interval defaults to 5 minutes; all other collectors are local and free.
+## This costs you nothing
+
+No tokens, and nothing charged against the limits it reports.
+
+The 5-hour/7-day windows come from **`GET https://api.anthropic.com/api/oauth/usage`**, authenticated with the
+OAuth token Claude Code already keeps in `~/.claude/.credentials.json`. That's the same endpoint Claude Code's own
+`/usage` screen reads, and it's a plain read — no inference. It returns `five_hour` and `seven_day` (each a
+`utilization` percentage plus an ISO-8601 `resets_at`), the usage-credits state (`extra_usage`), and a `limits[]`
+breakdown with per-window severity.
+
+| Data | Source | Cost |
+|---|---|---|
+| 5h / 7d rate-limit windows, usage credits | `GET /api/oauth/usage` (OAuth) | free |
+| Today's tokens/cost, cache %, model split, 7-day sparkline | local `~/.claude/projects/**/*.jsonl` scan | free |
+| Active agents / sub-agents | local transcript mtimes | free |
+| Service status, incidents | `status.claude.com` (unauthenticated) | free |
+| CPU / memory / disk / network / GPU / VRAM | psutil, nvidia-smi, amdgpu sysfs | free |
+
+The **reset countdown** is derived locally from `resets_at` and recomputed every frame, so it ticks down every
+second regardless of the poll interval. The endpoint is rate-limited server-side, so `intervals.limits` defaults to
+a polite 60 s; a failed poll keeps the last-good snapshot rather than blanking the panel.
+
+> **Note:** earlier versions probed `POST /v1/messages` with a 1-token Haiku call purely to read the
+> `anthropic-ratelimit-unified-*` response headers, since that looked like the only source of utilization. The
+> usage endpoint replaces that entirely.
 
 ## Configuration
 

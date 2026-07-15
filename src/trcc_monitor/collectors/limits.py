@@ -1,18 +1,17 @@
-"""Claude API rate-limit windows.
+"""Claude rate-limit windows.
 
-Ported from the KDE widget's ``fetch_limits.sh``. Reads the OAuth token from
-``~/.claude/.credentials.json`` and makes a minimal ``POST /v1/messages`` call
-(cheapest model, ``max_tokens: 1``) to read the ``anthropic-ratelimit-unified-*``
-response headers.
-
-WARNING: every poll is a real API request that counts against usage (one output
-token). Keep the interval long — default 5 minutes.
+Reads the OAuth token from ``~/.claude/.credentials.json`` and GETs
+``/api/oauth/usage`` — the same endpoint Claude Code's own ``/usage`` screen
+reads. It is a plain authenticated GET: no inference, no tokens, and nothing
+charged against the very limits it reports. Poll it as often as you like
+(within reason — the endpoint is itself rate-limited server-side).
 """
 from __future__ import annotations
 
 import json
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,12 +20,7 @@ import httpx
 from ..config import Proxy
 from .base import Collector
 
-API_URL = "https://api.anthropic.com/v1/messages"
-PROBE_BODY = {
-    "model": "claude-haiku-4-5-20251001",
-    "max_tokens": 1,
-    "messages": [{"role": "user", "content": "hi"}],
-}
+USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
 
 def _client(proxy: Proxy, timeout: float) -> httpx.Client:
@@ -44,16 +38,16 @@ def read_credentials(creds_file: str | Path) -> tuple[str, str]:
     return oauth["accessToken"], oauth.get("subscriptionType", "")
 
 
-def fmt_reset(ts_str: str | None, now: float | None = None) -> str | None:
+def fmt_reset(ts: str | float | None, now: float | None = None) -> str | None:
     """Human 'time until reset' like the widget: now / Nm / Nh / Nd."""
-    if not ts_str:
+    if not ts:
         return None
     try:
-        ts = int(ts_str)
+        target = int(float(ts))
     except (TypeError, ValueError):
-        return ts_str
+        return str(ts)
     ref = now if now is not None else time.time()
-    mins = round((ts - ref) / 60)
+    mins = round((target - ref) / 60)
     if mins < 0:
         return "now"
     if mins < 60:
@@ -65,58 +59,65 @@ def fmt_reset(ts_str: str | None, now: float | None = None) -> str | None:
     return f"{days}d"
 
 
-def _to_float(s: str | None) -> float:
+def _iso_to_unix(value: Any) -> float | None:
+    """Parse the endpoint's ISO-8601 ``resets_at`` into unix seconds."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
     try:
-        return float(s)  # type: ignore[arg-type]
+        dt = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
-        return 0.0
+        return None
+    if dt.tzinfo is None:  # defensive: the API sends an offset, but assume UTC
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
 
 
-def parse_ratelimit_headers(
-    headers: dict[str, str], subscription_type: str = "", now: float | None = None
-) -> dict[str, Any]:
-    """Parse ``anthropic-ratelimit-unified-*`` headers into the widget's shape.
-
-    ``headers`` should be a case-insensitive-ish mapping; keys are lowercased
-    here defensively. Pure; ``now`` is injectable for tests.
-    """
-    h = {k.lower(): v for k, v in headers.items()}
-
-    def get(name: str) -> str | None:
-        return h.get(name.lower())
-
-    def window(prefix: str) -> dict[str, Any]:
-        reset = get(f"anthropic-ratelimit-unified-{prefix}-reset")
-        return {
-            "status": get(f"anthropic-ratelimit-unified-{prefix}-status"),
-            "utilization": _to_float(
-                get(f"anthropic-ratelimit-unified-{prefix}-utilization")
-            ),
-            "reset_ts": reset,
-            "reset_in": fmt_reset(reset, now),
-        }
-
+def _window(raw: Any, now: float) -> dict[str, Any]:
+    """One rate-limit window, in the shape the renderer expects."""
+    if not isinstance(raw, dict):
+        return {"status": None, "utilization": 0.0, "reset_ts": None, "reset_in": None}
+    pct = raw.get("utilization")
+    # The endpoint reports 0-100; everything downstream works in 0-1.
+    util = float(pct) / 100.0 if isinstance(pct, (int, float)) else 0.0
+    reset_ts = _iso_to_unix(raw.get("resets_at"))
     return {
-        "status": get("anthropic-ratelimit-unified-status"),
-        "fallback": get("anthropic-ratelimit-unified-fallback"),
-        "fallback_pct": get("anthropic-ratelimit-unified-fallback-percentage"),
-        "representative_claim": get(
-            "anthropic-ratelimit-unified-representative-claim"
-        ),
-        "overage_status": get("anthropic-ratelimit-unified-overage-status"),
-        "overage_reason": get(
-            "anthropic-ratelimit-unified-overage-disabled-reason"
-        ),
-        "h5": window("5h"),
-        "d7": window("7d"),
+        # This endpoint has no allowed/rejected field (the old header API did),
+        # so treat a window as limited exactly when it is used up.
+        "status": "limited" if util >= 1.0 else "allowed",
+        "utilization": util,
+        "reset_ts": reset_ts,
+        "reset_in": fmt_reset(reset_ts, now),
+    }
+
+
+# extra_usage.is_enabled -> the widget's overage vocabulary.
+_OVERAGE_STATUS = {True: "allowed", False: "rejected"}
+
+
+def parse_usage_response(
+    payload: dict[str, Any], subscription_type: str = "", now: float | None = None
+) -> dict[str, Any]:
+    """Map ``GET /api/oauth/usage`` onto the dashboard's limits shape.
+
+    Pure; ``now`` is injectable for tests.
+    """
+    ref = now if now is not None else time.time()
+    extra = payload.get("extra_usage") or {}
+    return {
+        "overage_status": _OVERAGE_STATUS.get(extra.get("is_enabled")),
+        "overage_reason": extra.get("disabled_reason"),
+        "h5": _window(payload.get("five_hour"), ref),
+        "d7": _window(payload.get("seven_day"), ref),
         "plan": subscription_type,
-        "updated_at": int(now if now is not None else time.time()),
+        "updated_at": int(ref),
     }
 
 
 class LimitsCollector(Collector):
     name = "limits"
-    interval = 300.0
+    interval = 60.0
 
     def __init__(
         self,
@@ -135,18 +136,18 @@ class LimitsCollector(Collector):
         self.h5_reset_ts: float = 0.0
         self.d7_reset_ts: float = 0.0
 
-    def _fetch_headers(self, token: str) -> dict[str, str]:
+    def _fetch(self, token: str) -> dict[str, Any] | None:
+        """GET the usage payload. None means the token was rejected."""
         req_headers = {
             "Authorization": f"Bearer {token}",
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
+            "Content-Type": "application/json",
         }
         with _client(self._proxy, self._timeout) as client:
-            resp = client.post(API_URL, headers=req_headers, json=PROBE_BODY)
-        return {
-            k: v for k, v in resp.headers.items()
-            if k.lower().startswith("anthropic-ratelimit")
-        }
+            resp = client.get(USAGE_URL, headers=req_headers)
+        if resp.status_code in (401, 403):
+            return None
+        resp.raise_for_status()
+        return resp.json()
 
     def poll(self) -> dict[str, Any]:
         if not self._creds_file.is_file():
@@ -154,11 +155,11 @@ class LimitsCollector(Collector):
                 f"No credentials file at {self._creds_file}"
             )
         token, subscription = read_credentials(self._creds_file)
-        headers = self._fetch_headers(token)
+        payload = self._fetch(token)
 
         # Token may be stale (e.g. right after boot). Spawn claude briefly to
         # trigger an OAuth refresh, re-read the token, then retry once.
-        if not headers and self._recover:
+        if payload is None and self._recover:
             try:
                 subprocess.run(
                     ["claude", "-p", "x"],
@@ -169,17 +170,14 @@ class LimitsCollector(Collector):
             except (OSError, subprocess.SubprocessError):
                 pass
             token, subscription = read_credentials(self._creds_file)
-            headers = self._fetch_headers(token)
+            payload = self._fetch(token)
 
-        if not headers:
-            raise RuntimeError("API call failed or no rate-limit headers returned")
+        if payload is None:
+            raise RuntimeError("usage endpoint rejected the OAuth token")
 
-        result = parse_ratelimit_headers(headers, subscription)
+        result = parse_usage_response(payload, subscription)
         # Cache reset timestamps for window alignment.
         for key, attr in (("h5", "h5_reset_ts"), ("d7", "d7_reset_ts")):
             raw = result[key].get("reset_ts")
-            try:
-                setattr(self, attr, float(raw) if raw else 0.0)
-            except (TypeError, ValueError):
-                setattr(self, attr, 0.0)
+            setattr(self, attr, float(raw) if raw else 0.0)
         return result

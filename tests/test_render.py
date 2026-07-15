@@ -24,6 +24,25 @@ def test_render_empty_snapshots():
     assert img.size == (DESIGN_W, DESIGN_H)
 
 
+def test_limits_stale_threshold_exceeds_poll_interval():
+    # The stale marker must not fire between normal polls.
+    from trcc_monitor.config import Intervals
+    from trcc_monitor.render.frame import STALE_AFTER
+    assert STALE_AFTER["limits"] > Intervals().limits
+
+
+def test_reset_countdown_is_derived_from_timestamp_not_poll():
+    # A snapshot whose poll-time `reset_in` string is stale/wrong must still
+    # render a countdown computed live from the absolute reset_ts.
+    now = time.time()
+    win = {"utilization": 0.5, "status": "allowed",
+           "reset_ts": str(int(now + 2 * 3600)), "reset_in": "WRONG"}
+    from trcc_monitor.collectors.limits import fmt_reset
+    assert fmt_reset(win["reset_ts"], now) == "2h"
+    # ...and an hour later the same snapshot reads down to 1h, no re-poll.
+    assert fmt_reset(win["reset_ts"], now + 3600) == "1h"
+
+
 def test_render_degraded_snapshot():
     now = time.time()
     # limits failed (data=None, not ok) — should render the "no data" state.

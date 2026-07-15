@@ -29,7 +29,7 @@ class Intervals:
 
     # Rate-limit windows via GET /api/oauth/usage — free, but rate-limited
     # server-side, so stay polite rather than hammering it.
-    limits: float = 60.0      # 1 min — free authenticated GET
+    limits: float = 300.0     # 5 min — free authenticated GET
     usage: float = 60.0       # local transcript scan for tokens/cost
     sessions: float = 10.0    # local transcript mtime scan for active agents
     status: float = 120.0     # status.claude.com summary

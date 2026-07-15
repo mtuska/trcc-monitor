@@ -15,7 +15,7 @@ disk_path = "~"
 [intervals]
 # Rate-limit windows via GET /api/oauth/usage — free (no tokens). The endpoint
 # is rate-limited server-side, so stay polite rather than hammering it.
-limits = 60       # 1 min — free authenticated GET
+limits = 300      # 5 min — free authenticated GET
 usage = 60        # local transcript scan (tokens/cost) — free
 sessions = 10     # local active-agent scan — free
 status = 120      # status.claude.com — free

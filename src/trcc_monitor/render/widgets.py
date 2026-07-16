@@ -177,6 +177,65 @@ def ring(
         d.arc(box, start=-90, end=-90 + int(360 * frac), fill=color, width=width)
 
 
+def thermometer(
+    d: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    temp: float,
+    *,
+    scale: tuple[float, float],
+    advised: tuple[float, float],
+    color: tuple[int, int, int],
+):
+    """A vertical thermometer inside ``box`` (x, y, w, h): a glass tube with a
+    bulb reservoir, mercury filled to ``temp`` and tinted ``color``, colored
+    advised-min/max ticks with labels, and the current reading above the tube.
+    """
+    x, y, _wd, ht = box
+    lo, hi = scale
+    amin, amax = advised
+
+    tube_w = 11
+    bulb_r = 9
+    tube_x = x + 3
+    cx = tube_x + tube_w / 2
+    tube_top = y + 18
+    bulb_cy = y + ht - bulb_r - 1
+    tube_bottom = bulb_cy
+
+    def level_y(t: float) -> float:
+        f = (t - lo) / (hi - lo) if hi > lo else 0.0
+        f = max(0.0, min(1.0, f))
+        return tube_bottom - f * (tube_bottom - tube_top)
+
+    # Glass (empty): tube + bulb in the track color.
+    d.rounded_rectangle([tube_x, tube_top, tube_x + tube_w, tube_bottom],
+                        radius=tube_w / 2, fill=theme.TRACK)
+    d.ellipse([cx - bulb_r, bulb_cy - bulb_r, cx + bulb_r, bulb_cy + bulb_r],
+              fill=theme.TRACK)
+
+    # Mercury: the bulb is always full; a column rises to the current temp.
+    d.ellipse([cx - bulb_r + 2, bulb_cy - bulb_r + 2,
+               cx + bulb_r - 2, bulb_cy + bulb_r - 2], fill=color)
+    top_y = level_y(temp)
+    mw = tube_w - 4
+    if top_y < tube_bottom - 1:
+        d.rounded_rectangle([cx - mw / 2, top_y, cx + mw / 2, tube_bottom],
+                            radius=mw / 2, fill=color)
+
+    # Advised min/max ticks + labels to the right of the tube.
+    tick_x0 = tube_x + tube_w + 2
+    tick_x1 = tick_x0 + 6
+    for val, tcol in ((amin, theme.ACCENT_GREEN), (amax, theme.ACCENT_RED)):
+        ty = level_y(val)
+        d.line([tick_x0, ty, tick_x1, ty], fill=tcol, width=2)
+        text(d, (tick_x1 + 3, ty), f"{val:.0f}", weight="medium", size=10,
+             fill=tcol, anchor="lm")
+
+    # Current reading above the tube, tinted like the mercury.
+    text(d, (tick_x1, y + 8), f"{temp:.0f}°", weight="bold", size=13,
+         fill=color, anchor="mm")
+
+
 def _flat_top_perimeter(box, radius):
     """Ordered points tracing a flat-top / rounded-bottom tab, clockwise from
     the top-centre (so progress reads like a clock hand from 12 o'clock)."""

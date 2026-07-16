@@ -61,6 +61,40 @@ def util_color(util: float) -> tuple[int, int, int]:
     return ACCENT_GREEN
 
 
+def _lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float):
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
+# Advised operating envelope per chip, in °C: (scale_min, scale_max) is the
+# thermometer's drawn range; (advised_min, advised_max) are the marked ticks —
+# roughly a healthy idle floor and the point where silicon starts to throttle.
+# General guidance, not per-part datasheet values.
+CPU_TEMP = {"scale": (30, 100), "advised": (45, 85)}
+GPU_TEMP = {"scale": (30, 100), "advised": (45, 83)}
+
+
+def temp_color(temp: float, advised_max: float) -> tuple[int, int, int]:
+    """Smooth green→yellow→orange→red ramp keyed to a chip's advised max, so
+    the same function reads correctly for a CPU (85°C) or a GPU (83°C)."""
+    r = temp / advised_max if advised_max else 0.0
+    stops = (
+        (0.00, ACCENT_GREEN),
+        (0.75, ACCENT_GREEN),
+        (0.90, ACCENT_YELLOW),
+        (1.00, ACCENT_ORANGE),
+        (1.12, ACCENT_RED),
+    )
+    if r <= stops[0][0]:
+        return stops[0][1]
+    if r >= stops[-1][0]:
+        return stops[-1][1]
+    for (r0, c0), (r1, c1) in zip(stops, stops[1:]):
+        if r <= r1:
+            t = (r - r0) / (r1 - r0) if r1 > r0 else 0.0
+            return _lerp(c0, c1, t)
+    return stops[-1][1]
+
+
 # ── Fonts ──────────────────────────────────────────────────────────────
 _FONT_FILES = {
     "regular": "NotoSans-Regular.ttf",

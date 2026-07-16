@@ -359,14 +359,14 @@ def _draw_system(d, snaps, now, x, y, width, height, gap):
         card_w = (iw - card_gap) // 2
         _inner_card(d, (ix, card_y, card_w, card_h),
                     _short_cpu(sysd.get("cpu_name", "CPU")),
-                    [_cpu_ring(sysd), _mem_ring(sysd)])
+                    [_cpu_ring(sysd), _mem_ring(sysd)], therm=_cpu_therm(sysd))
         _inner_card(d, (ix + card_w + card_gap, card_y, iw - card_w - card_gap, card_h),
                     _short_gpu(gpud.get("name", "GPU")),
-                    [_gpu_ring(gpud), _vram_ring(gpud)])
+                    [_gpu_ring(gpud), _vram_ring(gpud)], therm=_gpu_therm(gpud))
     else:
         _inner_card(d, (ix, card_y, iw, card_h),
                     _short_cpu(sysd.get("cpu_name", "CPU")),
-                    [_cpu_ring(sysd), _mem_ring(sysd)])
+                    [_cpu_ring(sysd), _mem_ring(sysd)], therm=_cpu_therm(sysd))
 
     # Bottom row: disk ring (left) + network graph (right).
     by = card_y + card_h + 16
@@ -376,18 +376,30 @@ def _draw_system(d, snaps, now, x, y, width, height, gap):
     _net_row(d, sysd, ix + disk_w + 24, by, iw - disk_w - 24, bh)
 
 
-def _inner_card(d, box, title, rings):
+def _inner_card(d, box, title, rings, therm=None):
     x, y, cw, ch = box
     w.panel(d, box, radius=10, fill=theme.PANEL_INNER, outline=None)
     w.text(d, (x + 16, y + 12), _elide(title, cw - 32, "medium", 13),
            weight="medium", size=13, fill=theme.TEXT_DIM)
+
+    # A thermometer for the card's chip (CPU/GPU) sits at the left, leaving the
+    # rest of the width for the donut gauges.
+    ring_x0 = x + 16
+    if therm is not None:
+        temp, scale, advised, tcolor = therm
+        therm_w = 46
+        w.thermometer(d, (x + 14, y + 40, therm_w, ch - 40 - 14),
+                      temp, scale=scale, advised=advised, color=tcolor)
+        ring_x0 = x + 14 + therm_w + 6
+
     n = len(rings)
-    col_w = cw / n
-    r = 38
+    region = (x + cw - 16) - ring_x0
+    col_w = region / n
+    r = min(38, int(col_w / 2 - 8))
     label_y = y + 42
     cy = label_y + 14 + r
     for i, (val, label, color, sub) in enumerate(rings):
-        cx = int(x + col_w * (i + 0.5))
+        cx = int(ring_x0 + col_w * (i + 0.5))
         w.text(d, (cx, label_y), label, weight="medium", size=12,
                fill=theme.TEXT_DIM, anchor="mm")
         w.ring(d, (cx, cy), r, val / 100.0, color=color, width=8)
@@ -418,23 +430,35 @@ def _short_cpu(name: str) -> str:
 
 
 def _cpu_ring(sysd):
-    sub = []
-    if sysd.get("cpu_temp"):
-        sub.append(f"{sysd['cpu_temp']:.0f}°C")
-    if sysd.get("cpu_cores"):
-        sub.append(f"{sysd['cpu_cores']}c")
-    return (float(sysd.get("cpu_percent", 0.0)), "CPU", theme.ACCENT_BLUE,
-            " · ".join(sub))
+    # Temperature now lives in the thermometer beside the ring, so the sub-line
+    # carries only the core count.
+    sub = f"{sysd['cpu_cores']}c" if sysd.get("cpu_cores") else ""
+    return (float(sysd.get("cpu_percent", 0.0)), "CPU", theme.ACCENT_BLUE, sub)
 
 
 def _gpu_ring(gpud):
-    sub = []
-    if gpud.get("temp"):
-        sub.append(f"{gpud['temp']:.0f}°C")
-    if gpud.get("power"):
-        sub.append(f"{gpud['power']:.0f}W")
+    sub = f"{gpud['power']:.0f}W" if gpud.get("power") else ""
     return (float(gpud.get("usage_percent", 0.0)), "GPU", theme.ACCENT_PURPLE,
-            " · ".join(sub))
+            sub)
+
+
+def _cpu_therm(sysd):
+    """Thermometer spec for the CPU card, or None when no sensor is present."""
+    temp = sysd.get("cpu_temp")
+    if not temp:
+        return None
+    amax = theme.CPU_TEMP["advised"][1]
+    return (float(temp), theme.CPU_TEMP["scale"], theme.CPU_TEMP["advised"],
+            theme.temp_color(float(temp), amax))
+
+
+def _gpu_therm(gpud):
+    temp = gpud.get("temp")
+    if not temp:
+        return None
+    amax = theme.GPU_TEMP["advised"][1]
+    return (float(temp), theme.GPU_TEMP["scale"], theme.GPU_TEMP["advised"],
+            theme.temp_color(float(temp), amax))
 
 
 def _mem_ring(sysd):

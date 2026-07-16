@@ -6,7 +6,7 @@ from trcc_monitor import config as config_mod
 
 def test_defaults_when_missing(tmp_path):
     cfg = config_mod.load(tmp_path / "does-not-exist.toml")
-    assert cfg.intervals.limits == 60.0   # 1 min — each poll costs an API call
+    assert cfg.intervals.limits == 300.0   # 5 min — free authenticated GET
     assert cfg.proxy.mode == "env"
     assert cfg.sink.kind == "trccd"
     assert "limits" in cfg.panels

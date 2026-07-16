@@ -1,8 +1,12 @@
 # trcc-monitor
 
-Headless Claude-usage and system dashboard for the **Thermalright Trofeo Vision 9.16" LCD**
+Headless Claude-usage and system dashboard for the **Thermalright Trofeo Vision 9.16" LCD AIO Display**
 (1920×480 ultrawide). Replaces the KDE Plasma desktop widgets with an always-on hardware display,
 running as a systemd user service.
+
+**Target hardware:** Thermalright Trofeo Vision 9.16" LCD AIO Display — a Winbond LY-series bulk-USB panel
+(`0416:5408`, "USBDISPLAY"). Marketed as 1920×480; the usable framebuffer is **1920×462**, which is what the
+dashboard renders and pushes.
 
 It collects the same data the [Claude Limits KDE widget](https://www.opendesktop.org/p/2359310)
 shows — rate-limit windows, local token usage/cost, active Claude Code sessions, service status —

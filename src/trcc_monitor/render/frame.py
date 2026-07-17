@@ -26,6 +26,7 @@ DESIGN_H = 462
 
 STALE_AFTER = {
     "limits": 15 * 60,
+    "codex": 10 * 60,
     "usage": 5 * 60,
     "sessions": 60,
     "status": 10 * 60,
@@ -45,8 +46,11 @@ def render_dashboard(
     M = 14
     GAP = 10
     CLOCK_H = 46
+    # Three columns: Claude (unchanged), a narrow Codex strip, then System.
     claude_w = 720
-    sys_x = M + claude_w + GAP
+    codex_x = M + claude_w + GAP
+    codex_w = 320
+    sys_x = codex_x + codex_w + GAP
     sys_w = DESIGN_W - M - sys_x
     # The clock tab hangs flush from the very top (y=0); panels start below it.
     top = CLOCK_H + 8
@@ -54,8 +58,11 @@ def render_dashboard(
     height = bottom - top
 
     _draw_claude(d, snapshots, now, M, top, claude_w, height)
+    _draw_codex(d, snapshots, now, codex_x, top, codex_w, height)
     _draw_system(d, snapshots, now, sys_x, top, sys_w, height, GAP)
-    _draw_clock(d, snapshots, now, DESIGN_W // 2, CLOCK_H, M)
+    # The clock rides directly above the Codex strip rather than at screen
+    # centre, so the two read as one column.
+    _draw_clock(d, snapshots, now, codex_x + codex_w // 2, CLOCK_H, M)
 
     if size != (DESIGN_W, DESIGN_H):
         img = img.resize(size, Image.LANCZOS)
@@ -338,6 +345,117 @@ def _today_block(d, usage, now, x, y, width):
 
 
 # ── System panel ───────────────────────────────────────────────────────
+def _window_elapsed(win, now):
+    """Fraction of a rate-limit window already elapsed, from reset_ts and its
+    duration (the window's start is implied). None when unknowable."""
+    reset_ts = _to_float(win.get("reset_ts"))
+    mins = win.get("window_mins")
+    if not reset_ts or not isinstance(mins, (int, float)) or mins <= 0:
+        return None
+    span = float(mins) * 60.0
+    return max(0.0, min(1.0, 1.0 - (reset_ts - now) / span))
+
+
+def _pace_verdict(util, elapsed):
+    """Compare spend against time elapsed in the window. Over pace is a caution,
+    so it must not borrow the ring's calm colour."""
+    slack = util - elapsed
+    if slack > 0.10:
+        return "over pace", theme.ACCENT_YELLOW
+    if slack < -0.10:
+        return "under pace", theme.ACCENT_GREEN
+    return "on pace", theme.TEXT_DIM
+
+
+def _codex_color(util, limited):
+    if limited:
+        return theme.ACCENT_RED
+    return theme.WARN_COLOR if util > theme.WARN_THRESHOLD else theme.CODEX_COLOR
+
+
+def _draw_codex(d, snaps, now, x, y, width, height):
+    """The narrow Codex strip: one big weekly-usage ring under the clock."""
+    w.panel(d, (x, y, width, height), radius=12, outline=None)
+    pad = 20
+    ix = x + pad
+    cx = x + width // 2
+    snap = snaps.get("codex")
+    cd = _d(snap)
+
+    cy = y + 16
+    w.text(d, (ix, cy), "CODEX", weight="bold", size=20, fill=theme.TEXT)
+    plan = (cd.get("plan") or "").upper()
+    if plan:
+        w.text(d, (ix + w.text_width("CODEX", "bold", 20) + 12, cy + 4), plan,
+               weight="bold", size=14, fill=theme.CODEX_COLOR)
+    _stale_tag(d, snap, now, x + width - pad, cy + 2)
+
+    weekly = cd.get("weekly")
+    if not weekly:
+        w.text(d, (cx, y + height // 2), "no data", weight="regular", size=14,
+               fill=theme.TEXT_FAINT, anchor="mm")
+        return
+
+    util = float(weekly.get("utilization", 0.0) or 0.0)
+    limited = bool(cd.get("limit_reached")) or util >= 1.0
+    color = _codex_color(util, limited)
+
+    # Window label above the ring, matching the system cards' idiom.
+    label_y = y + 62
+    w.text(d, (cx, label_y), weekly.get("label", "limit").upper(),
+           weight="medium", size=12, fill=theme.TEXT_DIM, anchor="mm")
+
+    r = 74
+    ring_cy = label_y + 22 + r
+    w.ring(d, (cx, ring_cy), r, util, color=color, track=theme.TRACK, width=12)
+    w.text(d, (cx, ring_cy - 6), f"{util * 100:.0f}%", weight="bold", size=40,
+           fill=theme.TEXT, anchor="mm")
+    if limited:
+        w.text(d, (cx, ring_cy + 24), "LIMITED", weight="bold", size=12,
+               fill=theme.ACCENT_RED, anchor="mm")
+
+    # Reset countdown — derived live from the absolute reset_ts each frame, so
+    # it ticks down between the collector's (slow) polls.
+    by = ring_cy + r + 26
+    reset_in = fmt_reset(weekly.get("reset_ts"), now)
+    if reset_in:
+        w.text(d, (cx, by), f"resets {reset_in}", weight="regular", size=14,
+               fill=theme.TEXT_DIM, anchor="mm")
+
+    # Pace: how far through the window we are vs how much is spent. The window
+    # start is implied by reset_ts - duration, so this needs no extra data.
+    elapsed = _window_elapsed(weekly, now)
+    if elapsed is not None:
+        by += 30
+        bw = width - 2 * pad
+        w.progress_bar(d, (ix, by, bw, 6), elapsed, color=theme.TEXT_FAINT,
+                       track=theme.TRACK)
+        # Where usage sits on the same axis — left of the fill means under pace.
+        mx = ix + int(bw * max(0.0, min(1.0, util)))
+        d.line([mx, by - 3, mx, by + 9], fill=color, width=2)
+        by += 20
+        verdict, vcol = _pace_verdict(util, elapsed)
+        w.text(d, (cx, by), verdict, weight="medium", size=12, fill=vcol,
+               anchor="mm")
+
+    # Usage credits — Codex's overage equivalent.
+    by += 26
+    if cd.get("unlimited"):
+        credit_txt, credit_col = "unlimited", theme.ACCENT_GREEN
+    elif cd.get("has_credits"):
+        credit_txt, credit_col = f"credits {cd.get('credits_balance') or ''}".strip(), theme.ACCENT_GREEN
+    else:
+        credit_txt, credit_col = "no credits", theme.TEXT_FAINT
+    w.text(d, (cx, by), credit_txt, weight="medium", size=13, fill=credit_col,
+           anchor="mm")
+
+    updated = _to_float(cd.get("updated_at"))
+    if updated:
+        w.text(d, (cx, y + height - 26),
+               "updated " + time.strftime("%H:%M", time.localtime(updated)),
+               weight="regular", size=12, fill=theme.TEXT_FAINT, anchor="mm")
+
+
 def _draw_system(d, snaps, now, x, y, width, height, gap):
     w.panel(d, (x, y, width, height), radius=12, outline=None)
     pad = 20

@@ -30,6 +30,9 @@ class Intervals:
     # Rate-limit windows via GET /api/oauth/usage — free, but rate-limited
     # server-side, so stay polite rather than hammering it.
     limits: float = 300.0     # 5 min — free authenticated GET
+    # Codex rate limits via the local `codex app-server` — free, but each poll
+    # spawns a process (~1s), so it stays slower than the HTTP collectors.
+    codex: float = 120.0      # 2 min — local JSON-RPC to codex app-server
     usage: float = 60.0       # local transcript scan for tokens/cost
     sessions: float = 10.0    # local transcript mtime scan for active agents
     status: float = 120.0     # status.claude.com summary
@@ -78,6 +81,7 @@ class Config:
         "usage",
         "sessions",
         "status",
+        "codex",
         "system",
         "gpu",
     )

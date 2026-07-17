@@ -32,6 +32,7 @@ ACCENT_GREEN = (110, 200, 130)     # OK status / healthy
 ACCENT_YELLOW = (235, 200, 90)     # warning
 ACCENT_RED = (232, 96, 96)         # critical / limited
 ACCENT_PURPLE = (170, 150, 235)    # GPU accent
+CODEX_COLOR = (16, 163, 127)       # #10A37F — Codex/OpenAI teal, vs Claude's orange
 TRACK = (40, 44, 52)               # empty portion of a bar
 
 # Service-status indicator → color (mirrors utils.js severityColor).

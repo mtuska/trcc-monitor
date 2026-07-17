@@ -53,3 +53,28 @@ def test_render_degraded_snapshot():
     }
     img = render_dashboard(snaps, now=now)
     assert img.size == (DESIGN_W, DESIGN_H)
+
+
+def test_codex_pace_verdict_flags_overspend_without_calm_color():
+    from trcc_monitor.render.frame import _pace_verdict, _window_elapsed
+    from trcc_monitor.render import theme
+    # Spending ahead of the clock is a caution, not the ring's calm teal.
+    verdict, color = _pace_verdict(0.60, 0.20)
+    assert verdict == "over pace"
+    assert color != theme.CODEX_COLOR
+    assert _pace_verdict(0.10, 0.50)[0] == "under pace"
+    assert _pace_verdict(0.50, 0.50)[0] == "on pace"
+
+
+def test_codex_window_elapsed_from_reset_and_duration():
+    from trcc_monitor.render.frame import _window_elapsed
+    now = 1_700_000_000
+    week = 7 * 86400
+    # Half the window still to run => half elapsed.
+    win = {"reset_ts": now + week / 2, "window_mins": 10080}
+    assert _window_elapsed(win, now) == 0.5
+    # Just reset => nothing elapsed.
+    assert _window_elapsed({"reset_ts": now + week, "window_mins": 10080}, now) == 0.0
+    # Unknowable without both halves.
+    assert _window_elapsed({"reset_ts": None, "window_mins": 10080}, now) is None
+    assert _window_elapsed({"reset_ts": now, "window_mins": None}, now) is None

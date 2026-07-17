@@ -10,9 +10,12 @@ dashboard renders and pushes.
 
 It collects the same data the [Claude Limits KDE widget](https://www.opendesktop.org/p/2359310)
 shows — rate-limit windows, local token usage/cost, active Claude Code sessions, service status —
-plus system metrics (CPU, memory, disk, network, and GPU/VRAM via nvidia-smi or amdgpu sysfs),
-renders a full dashboard frame, and pushes it to the LCD through the
-[thermalright-trcc-linux](https://github.com/) daemon (`trccd`).
+plus a **Codex** weekly-usage strip and system metrics (CPU, memory, disk, network, and GPU/VRAM
+via nvidia-smi or amdgpu sysfs), renders a full dashboard frame, and pushes it to the LCD through
+the [thermalright-trcc-linux](https://github.com/) daemon (`trccd`).
+
+The frame is three columns — **Claude** (720px), **Codex** (320px, sitting directly under the
+clock), and **System** (832px) — with the clock tab hanging from the top above the Codex strip.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and architecture.
 
@@ -83,10 +86,20 @@ breakdown with per-window severity.
 | Data | Source | Cost |
 |---|---|---|
 | 5h / 7d rate-limit windows, usage credits | `GET /api/oauth/usage` (OAuth) | free |
+| Codex weekly window, plan, credits | local `codex app-server` → `account/rateLimits/read` | free |
 | Today's tokens/cost, cache %, model split, 7-day sparkline | local `~/.claude/projects/**/*.jsonl` scan | free |
 | Active agents / sub-agents | local transcript mtimes | free |
 | Service status, incidents | `status.claude.com` (unauthenticated) | free |
 | CPU / memory / disk / network / GPU / VRAM | psutil, nvidia-smi, amdgpu sysfs | free |
+
+**Codex** is free the same way: rather than calling OpenAI ourselves, we ask the local `codex
+app-server` (JSON-RPC over stdio) for `account/rateLimits/read` — it owns the ChatGPT tokens in
+`~/.codex` and answers from its own session. The exact contract comes from
+`codex app-server generate-json-schema`, which emits `RateLimitWindow { usedPercent, resetsAt,
+windowDurationMins }`. The weekly window is picked by its **duration** (10080 minutes), not its
+position, since a plan may report it as either `primary` or `secondary`. `resetsAt` is an absolute
+timestamp, so its countdown ticks locally every frame — and because the duration implies the
+window's start, the strip also shows whether you're running **over or under pace** for the week.
 
 The **reset countdown** is derived locally from `resets_at` and recomputed every frame, so it ticks down every
 second regardless of the poll interval. The endpoint is rate-limited server-side, so `intervals.limits` defaults to

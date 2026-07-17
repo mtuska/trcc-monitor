@@ -5,6 +5,7 @@ dict payload. Parsing logic is factored into module-level pure functions so it
 can be unit-tested without threads or I/O.
 """
 from .base import Collector, CollectorRunner, Dashboard, Snapshot
+from .codex import CodexCollector
 from .gpu import GpuCollector
 from .limits import LimitsCollector
 from .sessions import SessionsCollector
@@ -17,6 +18,7 @@ __all__ = [
     "CollectorRunner",
     "Dashboard",
     "Snapshot",
+    "CodexCollector",
     "GpuCollector",
     "LimitsCollector",
     "SessionsCollector",

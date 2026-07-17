@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .collectors import (
+    CodexCollector,
     Dashboard,
     GpuCollector,
     LimitsCollector,
@@ -42,6 +43,8 @@ def build_dashboard(config: Config) -> tuple[Dashboard, dict]:
         collectors["status"] = StatusCollector(
             config.proxy, config.intervals.status
         )
+    if enabled("codex"):
+        collectors["codex"] = CodexCollector(config.intervals.codex)
     if enabled("system"):
         collectors["system"] = SystemCollector(
             config.intervals.system, disk_path=config.disk_path

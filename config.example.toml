@@ -3,7 +3,9 @@
 
 # Which panels to render, in priority order. "gpu" auto-detects NVIDIA
 # (nvidia-smi) or AMD (amdgpu sysfs) and is skipped if no GPU is found.
-panels = ["limits", "usage", "sessions", "status", "system", "gpu"]
+# "codex" needs the `codex` CLI installed and logged in; drop it if you don't
+# use Codex and the strip disappears.
+panels = ["limits", "usage", "sessions", "status", "codex", "system", "gpu"]
 
 # Transcript mtime freshness (seconds) for counting agents "working now".
 session_window_s = 30
@@ -16,6 +18,9 @@ disk_path = "~"
 # Rate-limit windows via GET /api/oauth/usage — free (no tokens). The endpoint
 # is rate-limited server-side, so stay polite rather than hammering it.
 limits = 300      # 5 min — free authenticated GET
+# Codex weekly window via the local `codex app-server` (JSON-RPC on stdio) —
+# free, but each poll spawns a process (~1s), so keep it slow.
+codex = 120       # 2 min — local JSON-RPC, no network of our own
 usage = 60        # local transcript scan (tokens/cost) — free
 sessions = 10     # local active-agent scan — free
 status = 120      # status.claude.com — free

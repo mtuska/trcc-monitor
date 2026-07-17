@@ -35,6 +35,17 @@ def snapshots() -> dict[str, Snapshot]:
                    "reset_ts": str(now + 3 * 86400 + 16 * 3600), "reset_in": "4d"},
             "updated_at": now,
         }),
+        "codex": _snap("codex", {
+            "plan": "plus",
+            "weekly": {"utilization": 0.15, "reset_ts": now + 6 * 86400 + 4 * 3600,
+                       "window_mins": 10080, "label": "7-day"},
+            "windows": [],
+            "limit_reached": False,
+            "credits_balance": "0",
+            "has_credits": False,
+            "unlimited": False,
+            "updated_at": now,
+        }),
         "usage": _snap("usage", {
             "today": {"input": 125149, "output": 2799706, "cache_write": 21693915,
                       "cache_read": 789024216, "total": 813642986,

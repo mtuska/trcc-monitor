@@ -8,11 +8,14 @@ kills the thread — the loop just records the error and tries again next tick.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -79,11 +82,19 @@ class CollectorRunner:
             data = self._collector.poll()
         except Exception as e:  # noqa: BLE001 — a collector must never crash the loop
             self._ok = False
-            self._error = f"{type(e).__name__}: {e}"
+            error = f"{type(e).__name__}: {e}"
+            # Log on the rising edge only: a permanently broken collector would
+            # otherwise flood the journal, but staying silent means its panel
+            # reads "no data" with nothing anywhere explaining why.
+            if error != self._error:
+                log.warning("collector %s failed: %s", self._collector.name, error)
+            self._error = error
         else:
             with self._lock:
                 self._data = data
                 self._updated_at = time.time()
+            if not self._ok and self._error:
+                log.info("collector %s recovered", self._collector.name)
             self._ok = True
             self._error = None
         return self.snapshot()

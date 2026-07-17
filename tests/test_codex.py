@@ -92,3 +92,39 @@ def test_window_labels():
     assert _window_label(1440) == "1-day"
     assert _window_label(30) == "30-min"
     assert _window_label(None) == "limit"
+
+
+def test_find_codex_bin_prefers_explicit_override(tmp_path):
+    from trcc_monitor.collectors.codex import find_codex_bin
+    fake = tmp_path / "codex"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    assert find_codex_bin(str(fake)) == str(fake)
+
+
+def test_find_codex_bin_rejects_bad_override(tmp_path):
+    import pytest
+    from trcc_monitor.collectors.codex import find_codex_bin
+    with pytest.raises(RuntimeError, match="not executable"):
+        find_codex_bin(str(tmp_path / "nope"))
+
+
+def test_find_codex_bin_falls_back_off_path(tmp_path, monkeypatch):
+    # A systemd user service's PATH often misses Homebrew et al, so an empty
+    # PATH must still find the CLI via the known install roots.
+    from trcc_monitor.collectors import codex as mod
+    fake = tmp_path / "codex"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(mod.shutil, "which", lambda _: None)
+    monkeypatch.setattr(mod, "_FALLBACK_BINS", (str(fake),))
+    assert mod.find_codex_bin() == str(fake)
+
+
+def test_find_codex_bin_error_is_actionable(monkeypatch):
+    import pytest
+    from trcc_monitor.collectors import codex as mod
+    monkeypatch.setattr(mod.shutil, "which", lambda _: None)
+    monkeypatch.setattr(mod, "_FALLBACK_BINS", ())
+    with pytest.raises(RuntimeError, match="codex_bin"):
+        mod.find_codex_bin()

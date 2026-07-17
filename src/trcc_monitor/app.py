@@ -44,7 +44,9 @@ def build_dashboard(config: Config) -> tuple[Dashboard, dict]:
             config.proxy, config.intervals.status
         )
     if enabled("codex"):
-        collectors["codex"] = CodexCollector(config.intervals.codex)
+        collectors["codex"] = CodexCollector(
+            config.intervals.codex, bin_path=config.codex_bin or None
+        )
     if enabled("system"):
         collectors["system"] = SystemCollector(
             config.intervals.system, disk_path=config.disk_path

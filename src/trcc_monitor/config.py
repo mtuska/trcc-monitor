@@ -90,6 +90,10 @@ class Config:
     # "/", since on immutable/ostree distros (Bazzite) "/" is a full read-only
     # deployment root and reports a useless 100%.
     disk_path: str = field(default_factory=lambda: os.path.expanduser("~"))
+    # Path to the codex CLI. Empty = auto-detect (PATH, then the usual per-user
+    # install roots). Set this when codex lives somewhere a systemd user
+    # service's minimal PATH won't reach, e.g. Homebrew.
+    codex_bin: str = ""
 
     @property
     def credentials_file(self) -> Path:
@@ -126,6 +130,8 @@ def load(path: Path | None = None) -> Config:
         top["session_window_s"] = float(raw["session_window_s"])
     if "disk_path" in raw:
         top["disk_path"] = str(Path(str(raw["disk_path"])).expanduser())
+    if "codex_bin" in raw:
+        top["codex_bin"] = str(Path(str(raw["codex_bin"])).expanduser())
 
     if isinstance(raw.get("intervals"), dict):
         top["intervals"] = _apply_section(cfg.intervals, raw["intervals"])

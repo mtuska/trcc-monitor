@@ -11,17 +11,55 @@ minutes is the weekly limit, 300 the 5-hour one. A plan may report only one.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from .base import Collector
 
 WEEKLY_MINS = 10080
 
+# A systemd user service gets a minimal PATH that typically excludes Homebrew
+# and other per-user install roots, so PATH alone can't be trusted to find the
+# CLI even when an interactive shell finds it fine.
+_FALLBACK_BINS = (
+    "/home/linuxbrew/.linuxbrew/bin/codex",
+    "~/.linuxbrew/bin/codex",
+    "~/.local/bin/codex",
+    "~/.npm-global/bin/codex",
+    "~/.volta/bin/codex",
+    "/usr/local/bin/codex",
+    "/opt/homebrew/bin/codex",
+)
 
-def _rpc(timeout: float) -> dict[str, Any]:
+
+def find_codex_bin(explicit: str | None = None) -> str:
+    """Locate the codex CLI: an explicit override, then PATH, then the usual
+    per-user install roots. Raises with actionable detail when absent."""
+    if explicit:
+        p = Path(explicit).expanduser()
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+        raise RuntimeError(f"configured codex_bin is not executable: {explicit}")
+    found = shutil.which("codex")
+    if found:
+        return found
+    for cand in _FALLBACK_BINS:
+        p = Path(cand).expanduser()
+        if p.is_file() and os.access(p, os.X_OK):
+            return str(p)
+    raise RuntimeError(
+        "codex CLI not found on PATH or in the usual install locations; "
+        'set codex_bin = "/path/to/codex" in the config, or drop "codex" '
+        "from panels"
+    )
+
+
+def _rpc(timeout: float, bin_path: str) -> dict[str, Any]:
     """Run one initialize + rateLimits/read exchange against a fresh app-server.
 
     stdin is deliberately held open: the server exits on EOF, and the
@@ -30,7 +68,7 @@ def _rpc(timeout: float) -> dict[str, Any]:
     stops talking, which unblocks the readline loop.
     """
     proc = subprocess.Popen(
-        ["codex", "app-server"],
+        [bin_path, "app-server"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -131,9 +169,16 @@ class CodexCollector(Collector):
     name = "codex"
     interval = 120.0
 
-    def __init__(self, interval: float | None = None, timeout: float = 20.0) -> None:
+    def __init__(self, interval: float | None = None, timeout: float = 20.0,
+                 bin_path: str | None = None) -> None:
         super().__init__(interval)
         self._timeout = timeout
+        self._configured_bin = bin_path
+        self._bin: str | None = None
 
     def poll(self) -> dict[str, Any]:
-        return parse_rate_limits(_rpc(self._timeout))
+        # Resolved lazily and cached: the CLI may be installed after we start,
+        # and re-resolving every poll would stat the fallback list needlessly.
+        if self._bin is None:
+            self._bin = find_codex_bin(self._configured_bin)
+        return parse_rate_limits(_rpc(self._timeout, self._bin))
